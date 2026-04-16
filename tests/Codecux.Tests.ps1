@@ -847,6 +847,74 @@ function Test-DashboardRefreshWorkerResultUsesSafePropertyAccess {
     Assert-Equal $mode2 'all' 'Safe property access should return the value for existing properties.'
 }
 
+function Test-DashboardAllRefreshRetainsLastKnownGoodRowsOnTransientFailures {
+    try {
+        Import-Module (Get-CliModulePath) -Force
+        $cliModule = Get-Module Codecux.Cli
+
+        $previousSnapshot = [pscustomobject]@{
+            Rows = @(
+                [pscustomobject]@{ Name='b1'; QuotaDisplay='31%'; ResetDisplay='08 Apr 21:01'; RowStatus='OK'; LastUpdatedAt='2026-04-16 10:30:00' },
+                [pscustomobject]@{ Name='b2'; QuotaDisplay='11%'; ResetDisplay='09 Apr 11:16'; RowStatus='OK'; LastUpdatedAt='2026-04-16 10:30:00' }
+            )
+        }
+        $refreshedSnapshot = [pscustomobject]@{
+            Rows = @(
+                [pscustomobject]@{ Name='b1'; QuotaDisplay='--'; ResetDisplay='--'; RowStatus='ERR'; LastUpdatedAt='2026-04-16 10:33:00' },
+                [pscustomobject]@{ Name='b2'; QuotaDisplay='14%'; ResetDisplay='09 Apr 12:00'; RowStatus='OK'; LastUpdatedAt='2026-04-16 10:33:00' }
+            )
+        }
+
+        $merged = & $cliModule {
+            param($OldSnapshot, $NewSnapshot)
+            Merge-CodecuxDashboardRefreshSnapshot -PreviousSnapshot $OldSnapshot -RefreshedSnapshot $NewSnapshot
+        } $previousSnapshot $refreshedSnapshot
+
+        $b1 = $merged.Snapshot.Rows | Where-Object Name -eq 'b1'
+        $b2 = $merged.Snapshot.Rows | Where-Object Name -eq 'b2'
+        Assert-Equal $merged.RetainedCount 1 'Full refresh should keep the previous row when an existing OK row transiently fails.'
+        Assert-Equal $b1.RowStatus 'OK' 'A transient failure should preserve the previous healthy row status.'
+        Assert-Equal $b1.QuotaDisplay '31%' 'A transient failure should preserve the previous healthy quota display.'
+        Assert-Equal $b1.ResetDisplay '08 Apr 21:01' 'A transient failure should preserve the previous healthy reset display.'
+        Assert-Equal $b2.RowStatus 'OK' 'Healthy refreshed rows should still use the new data.'
+        Assert-Equal $b2.QuotaDisplay '14%' 'Healthy refreshed rows should keep the refreshed quota display.'
+    }
+    finally {
+        Import-Module $modulePath -Force
+    }
+}
+
+function Test-DashboardAllRefreshDoesNotMaskAuthFailures {
+    try {
+        Import-Module (Get-CliModulePath) -Force
+        $cliModule = Get-Module Codecux.Cli
+
+        $previousSnapshot = [pscustomobject]@{
+            Rows = @(
+                [pscustomobject]@{ Name='acct'; QuotaDisplay='31%'; ResetDisplay='08 Apr 21:01'; RowStatus='OK'; LastUpdatedAt='2026-04-16 10:30:00' }
+            )
+        }
+        $refreshedSnapshot = [pscustomobject]@{
+            Rows = @(
+                [pscustomobject]@{ Name='acct'; QuotaDisplay='--'; ResetDisplay='--'; RowStatus='AUTH'; LastUpdatedAt='2026-04-16 10:33:00' }
+            )
+        }
+
+        $merged = & $cliModule {
+            param($OldSnapshot, $NewSnapshot)
+            Merge-CodecuxDashboardRefreshSnapshot -PreviousSnapshot $OldSnapshot -RefreshedSnapshot $NewSnapshot
+        } $previousSnapshot $refreshedSnapshot
+
+        $row = $merged.Snapshot.Rows | Where-Object Name -eq 'acct'
+        Assert-Equal $merged.RetainedCount 0 'Auth failures should not be treated as transient and should not use stale quota data.'
+        Assert-Equal $row.RowStatus 'AUTH' 'Auth failures should remain visible in the dashboard.'
+        Assert-Equal $row.QuotaDisplay '--' 'Auth failures should show missing quota information.'
+    }
+    finally {
+        Import-Module $modulePath -Force
+    }
+}
+
 
 function Test-CliHelpShowsDashboardCommand {
     $output = Invoke-CliForTest -Arguments @('help')
@@ -1259,6 +1327,8 @@ $tests = @(
     'Test-DashboardRefreshWorkerDefinesModulePath',
     'Test-ReadConsoleKeySafelyHandlesUnavailableConsole',
     'Test-DashboardRefreshWorkerResultUsesSafePropertyAccess',
+    'Test-DashboardAllRefreshRetainsLastKnownGoodRowsOnTransientFailures',
+    'Test-DashboardAllRefreshDoesNotMaskAuthFailures',
     'Test-CliHelpShowsDashboardCommand',
     'Test-CliListAndCurrentCommands',
     'Test-InstallScriptConfiguresPowerShellCompletion',

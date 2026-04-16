@@ -143,6 +143,51 @@ function Receive-CodecuxDashboardRefreshWorkerResult {
     }
 }
 
+function Merge-CodecuxDashboardRefreshSnapshot {
+    param(
+        [Parameter(Mandatory = $true)]$PreviousSnapshot,
+        [Parameter(Mandatory = $true)]$RefreshedSnapshot
+    )
+
+    $retainedCount = 0
+    $previousRowsByName = @{}
+    foreach ($row in @($PreviousSnapshot.Rows)) {
+        if ($null -eq $row) { continue }
+        $name = [string](Get-CodecuxObjectPropertyValue -Object $row -Name 'Name')
+        if (-not [string]::IsNullOrWhiteSpace($name)) {
+            $previousRowsByName[$name] = $row
+        }
+    }
+
+    foreach ($row in @($RefreshedSnapshot.Rows)) {
+        if ($null -eq $row) { continue }
+        $name = [string](Get-CodecuxObjectPropertyValue -Object $row -Name 'Name')
+        if ([string]::IsNullOrWhiteSpace($name) -or -not $previousRowsByName.ContainsKey($name)) { continue }
+
+        $previousRow = $previousRowsByName[$name]
+        $previousStatus = [string](Get-CodecuxObjectPropertyValue -Object $previousRow -Name 'RowStatus')
+        $newStatus = [string](Get-CodecuxObjectPropertyValue -Object $row -Name 'RowStatus')
+        $newQuotaDisplay = [string](Get-CodecuxObjectPropertyValue -Object $row -Name 'QuotaDisplay')
+        $newResetDisplay = [string](Get-CodecuxObjectPropertyValue -Object $row -Name 'ResetDisplay')
+
+        $isTransientFailure = ($newStatus -in @('ERR', 'UNAVAIL'))
+        $isBlankQuota = [string]::IsNullOrWhiteSpace($newQuotaDisplay) -or $newQuotaDisplay -eq '--'
+        $isBlankReset = [string]::IsNullOrWhiteSpace($newResetDisplay) -or $newResetDisplay -eq '--'
+        if ($previousStatus -eq 'OK' -and $isTransientFailure -and $isBlankQuota -and $isBlankReset) {
+            $row.QuotaDisplay = [string](Get-CodecuxObjectPropertyValue -Object $previousRow -Name 'QuotaDisplay')
+            $row.ResetDisplay = [string](Get-CodecuxObjectPropertyValue -Object $previousRow -Name 'ResetDisplay')
+            $row.RowStatus = [string](Get-CodecuxObjectPropertyValue -Object $previousRow -Name 'RowStatus')
+            $row.LastUpdatedAt = [string](Get-CodecuxObjectPropertyValue -Object $previousRow -Name 'LastUpdatedAt')
+            $retainedCount += 1
+        }
+    }
+
+    [pscustomobject]@{
+        Snapshot = $RefreshedSnapshot
+        RetainedCount = $retainedCount
+    }
+}
+
 function Apply-CodecuxDashboardRefreshWorkerResult {
     param(
         [Parameter(Mandatory = $true)]$Snapshot,
@@ -159,9 +204,16 @@ function Apply-CodecuxDashboardRefreshWorkerResult {
 
     if ($Result.Mode -eq 'all') {
         $newSnapshot = Get-CodecuxDashboardSnapshot -StoreRoot $Parsed.StoreRoot -CodexRoot $Parsed.CodexRoot -OpencodeRoot $Parsed.OpencodeRoot -ProbeResults $Result.ProbeResults
+        $merged = Merge-CodecuxDashboardRefreshSnapshot -PreviousSnapshot $Snapshot -RefreshedSnapshot $newSnapshot
+        $message = if ($merged.RetainedCount -gt 0) {
+            ('refreshed all profiles (kept {0} previous row{1})' -f $merged.RetainedCount, $(if ($merged.RetainedCount -eq 1) { '' } else { 's' }))
+        }
+        else {
+            'refreshed all profiles'
+        }
         return [pscustomobject]@{
-            Snapshot = $newSnapshot
-            Message = 'refreshed all profiles'
+            Snapshot = $merged.Snapshot
+            Message = $message
         }
     }
 
