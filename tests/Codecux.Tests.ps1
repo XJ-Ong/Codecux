@@ -728,7 +728,7 @@ function Test-GetDashboardSnapshotUsesProbeResultsAndMarksCurrentProfile {
     finally { Remove-TestEnvironment $envInfo }
 }
 
-function Test-FormatDashboardRendersCurrentMarkerAndUnicodeQuotaBar {
+function Test-FormatDashboardRendersCurrentMarkerAndAsciiQuotaBar {
     $snapshot = [pscustomobject]@{
         Title = 'Codecux Dashboard'
         CurrentProfile = 'valid'
@@ -745,7 +745,7 @@ function Test-FormatDashboardRendersCurrentMarkerAndUnicodeQuotaBar {
     Assert-True ($rendered -like '*Codecux Dashboard*') 'Rendered dashboard should include the title.'
     Assert-True ($rendered -like '*Profile*Left*Reset*State*') 'Rendered dashboard should include the quota-oriented columns.'
     Assert-True ($rendered.Contains('┌')) 'Rendered dashboard should use Unicode box drawing.'
-    Assert-True ($rendered -like '*● valid*▰▰▰▰▰▰▰*57%*OK*') 'Rendered dashboard should show a persistent active marker and a pill-style bar-first quota cell.'
+    Assert-True ($rendered -like '*● valid*[#######-----]*57%*OK*') 'Rendered dashboard should show a persistent active marker and an ASCII segmented bar-first quota cell.'
     Assert-True ($rendered -like '*▶ expired*') 'Rendered dashboard should mark the selected row with a Unicode cursor.'
     Assert-True ($rendered -like '*Keys: ↑/↓ Select  U Use  R Refresh All  Q Quit*') 'Rendered dashboard should show Unicode arrow key hints.'
     Assert-True (-not $rendered.Contains('?')) 'Rendered dashboard should not contain placeholder question marks.'
@@ -1297,6 +1297,11 @@ function Test-DashboardStatusMessagesDoNotContainQuestionMark {
     Assert-Equal $matches.Count 0 'Dashboard status messages should not use ? as a separator.'
 }
 
+function Test-ProbeStartupDoesNotUseDeprecatedSessionSourceFlag {
+    $probeContent = Get-Content -Raw (Join-Path $PSScriptRoot '..\src\Codecux\Probe.ps1')
+    Assert-True (-not $probeContent.Contains('--session-source')) 'Probe startup should not use deprecated codex app-server --session-source.'
+}
+
 $tests = @(
     'Test-AddProfileSavesManifestAndCanonicalAuth',
     'Test-AddProfileRejectsDuplicateFingerprint',
@@ -1320,7 +1325,7 @@ $tests = @(
     'Test-AddApiKeyProfileStoresMaskedMetadataAndGeneratedAuth',
     'Test-ConvertRateLimitResponseComputesLeftPercentAndResetDisplay',
     'Test-GetDashboardSnapshotUsesProbeResultsAndMarksCurrentProfile',
-    'Test-FormatDashboardRendersCurrentMarkerAndUnicodeQuotaBar',
+    'Test-FormatDashboardRendersCurrentMarkerAndAsciiQuotaBar',
     'Test-SetDashboardCurrentProfileNameUpdatesMarkersWithoutClearingQuota',
     'Test-SetDashboardCurrentProfileNameMovesSyncTargetStatus',
     'Test-UpdateDashboardSnapshotRowPreservesOtherRows',
@@ -1354,7 +1359,8 @@ $tests = @(
     'Test-DashboardSurvivesMalformedProfileAuth',
     'Test-CompletionIncludesDashAlias',
     'Test-CompletionSuggestsProfileNamesForUse',
-    'Test-DashboardStatusMessagesDoNotContainQuestionMark'
+    'Test-DashboardStatusMessagesDoNotContainQuestionMark',
+    'Test-ProbeStartupDoesNotUseDeprecatedSessionSourceFlag'
 )
 
 foreach ($test in $tests) {

@@ -55,7 +55,7 @@ function Start-CodecuxCodexAppServerProcess {
     $commandToken = Get-CodecuxCodexCommandToken
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $env:ComSpec
-    $psi.Arguments = ('/d /c {0} app-server --listen ws://127.0.0.1:{1} --session-source cli' -f $commandToken, $port)
+    $psi.Arguments = ('/d /c {0} app-server --listen ws://127.0.0.1:{1}' -f $commandToken, $port)
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     $psi.RedirectStandardOutput = $true

@@ -274,9 +274,9 @@ function Get-CodecuxDashboardBar {
         [int]$Width = 12
     )
 
-    $emptyGlyph = [string][char]0x25B1
-    $filledGlyph = [string][char]0x25B0
-    $emptyBar = ($emptyGlyph * $Width)
+    $emptyGlyph = '-'
+    $filledGlyph = '#'
+    $emptyBar = '[' + ($emptyGlyph * $Width) + ']'
     if ([string]::IsNullOrWhiteSpace([string]$QuotaDisplay) -or $QuotaDisplay -eq '--') {
         return $emptyBar
     }
@@ -290,7 +290,7 @@ function Get-CodecuxDashboardBar {
     $percent = [Math]::Max(0, [Math]::Min(100, $percent))
     $filled = [int][Math]::Round(($percent / 100.0) * $Width, [System.MidpointRounding]::AwayFromZero)
     $filled = [Math]::Max(0, [Math]::Min($Width, $filled))
-    ($filledGlyph * $filled) + ($emptyGlyph * ($Width - $filled))
+    '[' + ($filledGlyph * $filled) + ($emptyGlyph * ($Width - $filled)) + ']'
 }
 
 function Get-CodecuxDashboardIndicator {
